@@ -1,0 +1,31 @@
+{
+  "name": "vtcli",
+  "version": "0.1.0",
+  "description": "CLI for submitting Vibetracker opinions and managing local auth config.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "vtcli": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^14.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}
