@@ -5,7 +5,7 @@ A command-line tool for submitting opinions about AI models to [Vibetracker](htt
 ## Install
 
 ```bash
-npm install -g vtcli
+npm install -g vibetracker-cli
 ```
 
 Requires Node.js 18 or later.

@@ -1,5 +1,5 @@
 {
-  "name": "vtcli",
+  "name": "vibetracker-cli",
   "version": "0.1.0",
   "description": "CLI for submitting Vibetracker opinions and managing local auth config.",
   "license": "MIT",
