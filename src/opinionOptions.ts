@@ -14,8 +14,24 @@ export async function tryResolveOpinionInput(input: OpinionInput) {
   return resolveOpinionInput(input, options);
 }
 
+export async function tryResolveModelIdentifier(model: string) {
+  let options: OpinionOptions;
+
+  try {
+    options = await fetchOpinionOptions();
+  } catch {
+    return normalizeOptionValue(model, '--model');
+  }
+
+  return resolveModelIdentifier(model, options);
+}
+
 export async function getOpinionOptions() {
   return await fetchOpinionOptions();
+}
+
+export function resolveModelIdentifier(model: string, options: OpinionOptions) {
+  return resolveModelSlug(model, options);
 }
 
 export function resolveOpinionInput(input: OpinionInput, options: OpinionOptions): OpinionInput {

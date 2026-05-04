@@ -26,7 +26,13 @@ Submit an opinion:
 vtcli opinion add --model gpt-4o --score 1
 ```
 
-Scores are `-1` (negative), `0` (neutral), or `1` (positive).
+Scores are `-1` (negative), `0` (neutral), or `1` (positive). After a successful submission, `vtcli` also prints the model's current sentiment summary when the server supports it.
+
+Fetch current sentiment without submitting a rating:
+
+```bash
+vtcli model sentiment --model gpt-4o
+```
 
 Install the Vibetracker agent skill for Codex, Claude Code, Cursor, OpenCode, and other skill-compatible agents:
 
@@ -49,7 +55,7 @@ vtcli skill install
 
 | Command | Description |
 |---|---|
-| `vtcli opinion add --model <slug> --score <-1\|0\|1>` | Submit an opinion |
+| `vtcli opinion add --model <slug> --score <-1\|0\|1>` | Submit an opinion and print current sentiment |
 
 Optional flags for `opinion add`:
 
@@ -59,7 +65,7 @@ Optional flags for `opinion add`:
 | `--interface <value>` | How you used the model (e.g. `api`) |
 | `--tool-id <value>` | Tool identifier (e.g. `openai-api`) |
 | `--comment <text>` | Free-text comment |
-| `--json` | Output raw JSON instead of a summary |
+| `--json` | Output JSON instead of a summary |
 | `--update-optional-context` | Update context on an existing opinion |
 
 Validation behavior:
@@ -94,6 +100,14 @@ vtcli opinion add \
 
 Add `--json` to any `options list` command for machine-readable output.
 Without `--search`, the model list command shows a summary instead of dumping the full catalog in human-readable mode.
+
+### `vtcli model`
+
+| Command | Description |
+|---|---|
+| `vtcli model sentiment --model <slug>` | Fetch current sentiment details for a model |
+
+`--model` accepts the same full slugs, unambiguous short slugs, and punctuation-only separator variants as `opinion add`. Add `--json` for machine-readable output.
 
 ### `vtcli skill`
 

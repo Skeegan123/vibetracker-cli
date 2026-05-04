@@ -13,10 +13,18 @@ import {
   setBaseUrl,
 } from './config.js';
 import { loginWithBrowser } from './browserAuth.js';
-import { ApiError, type OpinionInput, submitOpinion } from './http.js';
+import {
+  ApiError,
+  fetchModelSentimentDetails,
+  isModelSentimentDetails,
+  type ModelSentimentDetails,
+  type OpinionInput,
+  submitOpinion,
+} from './http.js';
 import {
   buildOptionsListResult,
   getOpinionOptions,
+  tryResolveModelIdentifier,
   tryResolveOpinionInput,
   type OptionListType,
 } from './opinionOptions.js';
@@ -130,6 +138,8 @@ const opinionCommand = program.command('opinion').description('Submit and inspec
 
 const optionsCommand = program.command('options').description('List supported models and submission context values.');
 
+const modelCommand = program.command('model').description('Inspect Vibetracker model data.');
+
 const skillCommand = program.command('skill').description('Install and inspect Vibetracker agent skills.');
 
 opinionCommand
@@ -143,7 +153,7 @@ opinionCommand
   .option('--tool-name-other <toolNameOther>', 'Optional freeform tool name')
   .option('--comment <comment>', 'Optional comment text')
   .option('--update-optional-context', 'Overwrite existing optional context fields')
-  .option('--json', 'Print the raw JSON response')
+  .option('--json', 'Print JSON output')
   .action(
     async (options: {
       model: string;
@@ -187,15 +197,36 @@ opinionCommand
 
       const resolvedInput = await tryResolveOpinionInput(input);
       const response = await submitOpinion(resolvedInput);
+      const responseSentiment = readResponseCurrentSentiment(response);
+      const currentSentiment =
+        responseSentiment === undefined ? await tryFetchModelSentimentDetails(resolvedInput.model) : responseSentiment;
 
       if (options.json) {
-        console.log(JSON.stringify(response, null, 2));
+        console.log(JSON.stringify(withCurrentSentiment(response, currentSentiment), null, 2));
         return;
       }
 
       printOpinionSuccess(response);
+      printCurrentSentiment(currentSentiment);
     },
   );
+
+modelCommand
+  .command('sentiment')
+  .description('Fetch current sentiment details for a model.')
+  .requiredOption('--model <model>', 'Model slug, for example gpt-5.4')
+  .option('--json', 'Print the raw JSON response')
+  .action(async (options: { model: string; json?: boolean }) => {
+    const model = await tryResolveModelIdentifier(options.model);
+    const details = await fetchModelSentimentDetails(model);
+
+    if (options.json) {
+      console.log(JSON.stringify(details, null, 2));
+      return;
+    }
+
+    printModelSentimentDetails(details);
+  });
 
 optionsCommand
   .command('list')
@@ -322,6 +353,92 @@ function printOpinionSuccess(response: unknown) {
   if (typeof result.cooldownEndsAt === 'number') {
     console.log(`Cooldown ends at: ${new Date(result.cooldownEndsAt).toISOString()}`);
   }
+}
+
+function readResponseCurrentSentiment(response: unknown): ModelSentimentDetails | null | undefined {
+  if (typeof response !== 'object' || response === null || !('currentSentiment' in response)) {
+    return undefined;
+  }
+
+  const currentSentiment = (response as { currentSentiment?: unknown }).currentSentiment;
+
+  if (currentSentiment === null) {
+    return null;
+  }
+
+  return isModelSentimentDetails(currentSentiment) ? currentSentiment : null;
+}
+
+async function tryFetchModelSentimentDetails(model: string): Promise<ModelSentimentDetails | null> {
+  try {
+    return await fetchModelSentimentDetails(model);
+  } catch {
+    return null;
+  }
+}
+
+function withCurrentSentiment(response: unknown, currentSentiment: ModelSentimentDetails | null) {
+  if (typeof response !== 'object' || response === null || 'currentSentiment' in response) {
+    return response;
+  }
+
+  return {
+    ...response,
+    currentSentiment,
+  };
+}
+
+function printCurrentSentiment(currentSentiment: ModelSentimentDetails | null) {
+  if (currentSentiment === null) {
+    console.log('Current sentiment: unavailable.');
+    return;
+  }
+
+  printModelSentimentDetails(currentSentiment, {
+    includeModelLine: false,
+  });
+}
+
+function printModelSentimentDetails(
+  details: ModelSentimentDetails,
+  options: {
+    includeModelLine?: boolean;
+  } = {},
+) {
+  const { model, sentiment } = details;
+
+  if (options.includeModelLine !== false) {
+    console.log(`Model: ${model.displayName} (${model.fullSlug})`);
+  }
+
+  console.log(`Current sentiment: ${sentiment.label} (${formatSignedPercent(sentiment.netSentiment)})`);
+  console.log(
+    `Recent ratings: ${formatCount(sentiment.totalSubmissions, 'rating')} (${sentiment.positiveCount} positive, ${sentiment.neutralCount} neutral, ${sentiment.negativeCount} negative)`,
+  );
+  console.log(
+    `Share: ${formatPercent(sentiment.positiveShare)} positive, ${formatPercent(sentiment.neutralShare)} neutral, ${formatPercent(sentiment.negativeShare)} negative`,
+  );
+
+  if (sentiment.baselineSentiment !== null) {
+    console.log(
+      `Trend: ${formatSignedPercent(sentiment.recentDelta)} recent delta; baseline ${formatSignedPercent(sentiment.baselineSentiment)}`,
+    );
+  }
+}
+
+function formatSignedPercent(value: number) {
+  const percent = Math.round(value * 100);
+  const prefix = percent > 0 ? '+' : '';
+  return `${prefix}${percent}%`;
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatCount(value: number, singular: string) {
+  const formattedValue = value.toLocaleString('en-US');
+  return `${formattedValue} ${value === 1 ? singular : `${singular}s`}`;
 }
 
 function printOptionsList(result: unknown) {

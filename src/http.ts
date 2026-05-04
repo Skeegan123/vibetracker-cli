@@ -35,6 +35,34 @@ export type OpinionInput = {
   comment?: string;
 };
 
+export type ModelSentimentDetails = {
+  model: {
+    displayName: string;
+    fullSlug: string;
+    providerName: string | null;
+    providerSlug: string | null;
+    status: string;
+  };
+  sentiment: {
+    label: string;
+    netSentiment: number;
+    totalSubmissions: number;
+    recentDelta: number;
+    baselineSentiment: number | null;
+    positiveCount: number;
+    neutralCount: number;
+    negativeCount: number;
+    positiveShare: number;
+    neutralShare: number;
+    negativeShare: number;
+  };
+  sparkline: Array<{
+    day: number;
+    avg: number;
+    count: number;
+  }>;
+};
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -67,6 +95,25 @@ export async function submitOpinion(input: OpinionInput) {
 
   if (!response.ok) {
     throw new ApiError(readApiErrorMessage(data, response.status), response.status, data);
+  }
+
+  return data;
+}
+
+export async function fetchModelSentimentDetails(model: string) {
+  const baseUrl = await resolveBaseUrl();
+  const url = new URL(buildApiUrl(baseUrl, '/api/v1/models/sentiment'));
+  url.searchParams.set('model', model);
+
+  const response = await fetch(url.toString());
+  const data = await parseResponse(response);
+
+  if (!response.ok) {
+    throw new ApiError(readApiErrorMessage(data, response.status), response.status, data);
+  }
+
+  if (!isModelSentimentDetails(data)) {
+    throw new Error('Unexpected response from /api/v1/models/sentiment.');
   }
 
   return data;
@@ -216,5 +263,34 @@ function isOpinionOptions(value: unknown): value is OpinionOptions {
     Array.isArray(record.interfaces) &&
     typeof record.toolsByInterface === 'object' &&
     record.toolsByInterface !== null
+  );
+}
+
+export function isModelSentimentDetails(value: unknown): value is ModelSentimentDetails {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const model = record.model;
+  const sentiment = record.sentiment;
+
+  if (typeof model !== 'object' || model === null || typeof sentiment !== 'object' || sentiment === null) {
+    return false;
+  }
+
+  const modelRecord = model as Record<string, unknown>;
+  const sentimentRecord = sentiment as Record<string, unknown>;
+
+  return (
+    typeof modelRecord.displayName === 'string' &&
+    typeof modelRecord.fullSlug === 'string' &&
+    typeof sentimentRecord.label === 'string' &&
+    typeof sentimentRecord.netSentiment === 'number' &&
+    typeof sentimentRecord.totalSubmissions === 'number' &&
+    typeof sentimentRecord.positiveCount === 'number' &&
+    typeof sentimentRecord.neutralCount === 'number' &&
+    typeof sentimentRecord.negativeCount === 'number' &&
+    Array.isArray(record.sparkline)
   );
 }
