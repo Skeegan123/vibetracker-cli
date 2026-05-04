@@ -28,6 +28,12 @@ vtcli opinion add --model gpt-4o --score 1
 
 Scores are `-1` (negative), `0` (neutral), or `1` (positive).
 
+Install the Vibetracker agent skill for Codex, Claude Code, Cursor, OpenCode, and other skill-compatible agents:
+
+```bash
+vtcli skill install
+```
+
 ## Commands
 
 ### `vtcli auth`
@@ -56,6 +62,14 @@ Optional flags for `opinion add`:
 | `--json` | Output raw JSON instead of a summary |
 | `--update-optional-context` | Update context on an existing opinion |
 
+Validation behavior:
+
+- `--model` accepts either a canonical full slug like `openai/gpt-4o` or an unambiguous short slug like `gpt-4o`
+- `--model` also accepts punctuation-only separator variants like `claude-sonnet-4-6` when they map to exactly one active model
+- invalid or ambiguous model slugs return clear errors
+- `--interface` and `--tool-id` are checked against the server's active option catalog when available
+- `--tool-name-other` is only valid together with `--tool-id other`
+
 Example with full context:
 
 ```bash
@@ -67,6 +81,30 @@ vtcli opinion add \
   --tool-id openai-api \
   --comment "Regression in tool calls after the latest deploy."
 ```
+
+### `vtcli options`
+
+| Command | Description |
+|---|---|
+| `vtcli options list --type model --search <query>` | Search active model slugs |
+| `vtcli options list --type interface` | List valid interface values |
+| `vtcli options list --type use-case` | List valid use-case values |
+| `vtcli options list --type tool` | List tools grouped by interface |
+| `vtcli options list --type tool --interface <value>` | List tools for one interface |
+
+Add `--json` to any `options list` command for machine-readable output.
+Without `--search`, the model list command shows a summary instead of dumping the full catalog in human-readable mode.
+
+### `vtcli skill`
+
+| Command | Description |
+|---|---|
+| `vtcli skill install` | Install the `vibetracker-rate` agent skill through the open `skills` installer |
+| `vtcli skill install --global` | Install the skill globally instead of into the current project |
+| `vtcli skill install --agent codex` | Install to a specific agent; repeat `--agent` for multiple agents |
+| `vtcli skill install --source <url>` | Install from a fork or alternate source |
+
+The command delegates to `npx skills add`, so the existing skills installer still handles agent detection, install scope, symlink/copy behavior, and prompts.
 
 ### `vtcli config`
 

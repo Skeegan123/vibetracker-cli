@@ -13,14 +13,21 @@ import {
   setBaseUrl,
 } from './config.js';
 import { loginWithBrowser } from './browserAuth.js';
-import { type OpinionInput, submitOpinion } from './http.js';
+import { ApiError, type OpinionInput, submitOpinion } from './http.js';
+import {
+  buildOptionsListResult,
+  getOpinionOptions,
+  tryResolveOpinionInput,
+  type OptionListType,
+} from './opinionOptions.js';
+import { buildSkillInstallCommand, formatCommand, runSkillInstallCommand } from './skillInstall.js';
 
 const program = new Command();
 
 program
   .name('vtcli')
   .description('Vibetracker CLI for opinion submission and local auth config.')
-  .version('0.1.0');
+  .version('0.1.1');
 
 const authCommand = program.command('auth').description('Manage CLI authentication.');
 
@@ -121,6 +128,10 @@ configCommand
 
 const opinionCommand = program.command('opinion').description('Submit and inspect opinions.');
 
+const optionsCommand = program.command('options').description('List supported models and submission context values.');
+
+const skillCommand = program.command('skill').description('Install and inspect Vibetracker agent skills.');
+
 opinionCommand
   .command('add')
   .description('Submit an opinion to Vibetracker.')
@@ -174,7 +185,8 @@ opinionCommand
         input.updateOptionalContext = true;
       }
 
-      const response = await submitOpinion(input);
+      const resolvedInput = await tryResolveOpinionInput(input);
+      const response = await submitOpinion(resolvedInput);
 
       if (options.json) {
         console.log(JSON.stringify(response, null, 2));
@@ -182,6 +194,70 @@ opinionCommand
       }
 
       printOpinionSuccess(response);
+    },
+  );
+
+optionsCommand
+  .command('list')
+  .description('List supported models, interfaces, use cases, or tools.')
+  .requiredOption('--type <type>', 'Option type: model, interface, tool, or use-case', parseOptionListType)
+  .option('--interface <interfaceName>', 'Filter tools to a specific interface')
+  .option('--search <query>', 'Search within model options')
+  .option('--json', 'Print raw JSON output')
+  .action(async (options: { type: OptionListType; interface?: string; search?: string; json?: boolean }) => {
+    if (options.search && options.type !== 'model') {
+      throw new Error('--search is currently supported only with `--type model`.');
+    }
+
+    let opinionOptions;
+
+    try {
+      opinionOptions = await getOpinionOptions();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        throw new Error('This Vibetracker server does not support `vtcli options list` yet.');
+      }
+
+      throw error;
+    }
+
+    const result = buildOptionsListResult(opinionOptions, options.type, options.interface, options.search);
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    printOptionsList(result);
+  });
+
+skillCommand
+  .command('install')
+  .description('Install the vibetracker-rate agent skill through the open skills installer.')
+  .option('-g, --global', 'Install globally instead of into the current project')
+  .option('-a, --agent <agent>', 'Target a specific agent; repeat for multiple agents', collectOptionValues, [])
+  .option('--copy', 'Copy skill files instead of using the installer default')
+  .option('--source <source>', 'Skill source URL or owner/repo, useful for testing a fork')
+  .option('--dry-run', 'Print the installer command without running it')
+  .option('-y, --yes', 'Skip installer confirmation prompts')
+  .action(
+    async (options: {
+      agent?: string[];
+      copy?: boolean;
+      dryRun?: boolean;
+      global?: boolean;
+      source?: string;
+      yes?: boolean;
+    }) => {
+      const command = buildSkillInstallCommand(options);
+
+      console.log(`Running: ${formatCommand(command)}`);
+
+      if (options.dryRun) {
+        return;
+      }
+
+      await runSkillInstallCommand(command);
     },
   );
 
@@ -199,6 +275,19 @@ function parseScore(value: string): OpinionInput['score'] {
   }
 
   throw new InvalidArgumentError('Score must be -1, 0, or 1.');
+}
+
+function parseOptionListType(value: string): OptionListType {
+  if (value === 'model' || value === 'interface' || value === 'tool' || value === 'use-case') {
+    return value;
+  }
+
+  throw new InvalidArgumentError('Type must be one of: model, interface, tool, use-case.');
+}
+
+function collectOptionValues(value: string, previous: string[]) {
+  previous.push(value);
+  return previous;
 }
 
 function printOpinionSuccess(response: unknown) {
@@ -233,4 +322,84 @@ function printOpinionSuccess(response: unknown) {
   if (typeof result.cooldownEndsAt === 'number') {
     console.log(`Cooldown ends at: ${new Date(result.cooldownEndsAt).toISOString()}`);
   }
+}
+
+function printOptionsList(result: unknown) {
+  if (typeof result !== 'object' || result === null || !('type' in result) || typeof result.type !== 'string') {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  const record = result as Record<string, unknown>;
+
+  if (result.type === 'model' && Array.isArray(record.options)) {
+    const options = record.options as Array<{ fullSlug: string; displayName: string; shortSlug: string }>;
+    const totalCount = typeof record.totalCount === 'number' ? record.totalCount : options.length;
+    const search = typeof record.search === 'string' ? record.search : null;
+
+    if (search && options.length === 0) {
+      console.log(`No models matched "${search}".`);
+      return;
+    }
+
+    if (!search && options.length > 100) {
+      console.log(`${totalCount} active models available.`);
+      console.log('Use `vtcli options list --type model --search <query>` to narrow the results.');
+
+      for (const option of options.slice(0, 10)) {
+        console.log(`${option.fullSlug}\t${option.displayName}\tshort: ${option.shortSlug}`);
+      }
+
+      return;
+    }
+
+    for (const option of options) {
+      console.log(`${option.fullSlug}\t${option.displayName}\tshort: ${option.shortSlug}`);
+    }
+
+    return;
+  }
+
+  if ((result.type === 'interface' || result.type === 'use-case') && Array.isArray(record.options)) {
+    const options = record.options as Array<{ value: string; label: string }>;
+
+    for (const option of options) {
+      console.log(`${option.value}\t${option.label}`);
+    }
+
+    return;
+  }
+
+  if (result.type === 'tool') {
+    const toolResult = result as {
+      interface?: string;
+      options?: Array<{ value: string; label: string }>;
+      interfaces?: Array<{ value: string; label: string }>;
+      optionsByInterface?: Record<string, Array<{ value: string; label: string }>>;
+    };
+
+    if (toolResult.interface && Array.isArray(toolResult.options)) {
+      console.log(`Interface: ${toolResult.interface}`);
+
+      for (const option of toolResult.options) {
+        console.log(`${option.value}\t${option.label}`);
+      }
+
+      return;
+    }
+
+    if (Array.isArray(toolResult.interfaces) && toolResult.optionsByInterface) {
+      for (const interfaceOption of toolResult.interfaces) {
+        console.log(`${interfaceOption.value}\t${interfaceOption.label}`);
+
+        for (const toolOption of toolResult.optionsByInterface[interfaceOption.value] ?? []) {
+          console.log(`  ${toolOption.value}\t${toolOption.label}`);
+        }
+      }
+
+      return;
+    }
+  }
+
+  console.log(JSON.stringify(result, null, 2));
 }
